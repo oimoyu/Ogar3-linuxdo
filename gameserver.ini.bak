@@ -1,0 +1,124 @@
+; 服务器设置
+serverMaxConnections = 200      ; 最大 WebSocket 连接数（打开网页即建立连接，超过此数量将拒绝新连接）
+serverMaxPlayers = 64            ; 最大玩家数（点击 Play 进入游戏的玩家数量限制）
+serverMaxConnPerIp = 9           ; 每个IP最大连接数（防止单个用户开多个标签页）
+serverPort = 8091                ; 服务器端口
+serverGamemode = 0               ; 游戏模式 (0=FFA, 1=Teams, 2=Experimental, 10=Tournament, 11=Hunger Games, 12=Zombie, 13=Team Z, 14=Team X, 20=Rainbow)
+serverResetTime = 0              ; 服务器自动重启时间
+serverName = Ogar3 Server        ; 服务器名称
+serverAdminPass =      ; 管理员密码（游戏内聊天框输入: /rcon 密码 命令 来执行管理命令，留空则禁用远程管理）
+
+; ==================== 可用的管理命令 (RCON Commands) ====================
+; 使用方法: /rcon 密码 命令 [参数]
+;
+; addbot [数量]              - 添加机器人（默认1个）
+; ban <IP>                   - 封禁指定IP的玩家
+; banlist [clear]            - 显示封禁列表（clear清空列表）
+; board <文本...>            - 设置自定义排行榜文本
+; boardreset                 - 重置排行榜为默认
+; change <配置项> <值>       - 修改配置项（如: change serverMaxConnections 100）
+; clear                      - 清空控制台输出
+; color <玩家ID> <R> <G> <B> - 设置玩家颜色（RGB值0-255）
+; exit                       - 停止服务器
+; food <X> <Y> [质量]        - 在指定位置生成食物
+; gamemode <模式ID>          - 切换游戏模式（0=FFA, 1=Teams等）
+; kick <玩家ID>              - 踢出指定玩家
+; kill <玩家ID>              - 杀死指定玩家的所有细胞
+; killall                    - 杀死所有玩家
+; mass <玩家ID> <质量>       - 设置玩家细胞质量
+; merge <玩家ID>             - 强制玩家合并细胞
+; name <玩家ID> <名字>       - 修改玩家名字
+; playerlist                 - 显示所有玩家列表及详细信息
+; pause                      - 暂停/恢复游戏
+; reload                     - 重新加载配置文件
+; say <消息...>              - 服务器广播消息
+; split <玩家ID> [次数]      - 强制玩家分裂（默认4次=16个细胞）
+; status                     - 显示服务器状态（玩家数、运行时间、内存等）
+; tp <玩家ID> <X> <Y>        - 传送玩家到指定坐标
+; unban <IP>                 - 解除IP封禁
+; virus <X> <Y> [质量]       - 在指定位置生成病毒
+; help                       - 显示命令帮助（仅控制台）
+; ========================================================================
+serverBots = 3                   ; 机器人数量
+serverVersion = 1                ; 服务器版本
+serverOldColors = 0              ; 使用旧版颜色 (0=否, 1=是)
+serverViewBaseX = 1024           ; 视野基础宽度
+serverViewBaseY = 592            ; 视野基础高度
+serverStatsPort = -88            ; 统计端口 (负数=禁用)
+serverStatsUpdate = 60           ; 统计更新间隔（秒）
+serverLogLevel = 2               ; 日志级别 (0=无, 1=错误, 2=警告, 3=信息, 4=调试)
+
+; 游戏设置
+gameLBlength = 10                ; 排行榜显示长度
+ffaWinMultiplier = 1.0           ; FFA胜利系数（第一名分数 > 其他所有人分数总和 * 系数时获胜，0=禁用胜利条件）
+ffaMinWinScore = 2000            ; FFA最小胜利分数（第一名必须达到此分数才能判断胜利，0=无限制）
+
+; 地图边界
+borderLeft = 0                   ; 左边界
+borderRight = 10000               ; 右边界
+borderTop = 0                    ; 上边界
+borderBottom = 10000              ; 下边界
+
+; 食物设置
+spawnInterval = 20               ; 生成间隔（毫秒）
+foodSpawnAmount = 10             ; 每次生成食物数量
+foodStartAmount = 100            ; 初始食物数量
+foodMaxAmount = 500              ; 最大食物数量
+foodMass = 1                     ; 食物质量
+foodMaxMass = 4                  ; 食物最大质量
+
+; 病毒设置
+virusMinAmount = 10              ; 最小病毒数量
+virusMaxAmount = 50              ; 最大病毒数量
+virusStartMass = 100             ; 病毒初始质量
+virusFeedAmount = 7              ; 喂食病毒所需数量
+
+; 母细胞设置
+motherCellMinMass = 200          ; 母细胞最小质量
+motherCellMaxMass = 2000         ; 母细胞最大质量
+
+; 喷射设置
+ejectMass = 12                   ; 喷射物质量
+ejectMassLoss = 16               ; 喷射损失质量
+ejectSpeed = 160                 ; 喷射速度
+ejectSpawnPlayer = 50            ; 玩家喷射生成距离
+
+; 玩家设置
+playerStartMass = 10             ; 玩家初始质量
+playerMaxMass = 22500            ; 玩家最大质量
+playerSpeed = 30                 ; 玩家速度
+playerSplitSpeedMultiplier = 6   ; 分裂速度倍数
+playerPopsplitSpeed = 1          ; 爆裂分裂速度
+playerMinMassEject = 32          ; 喷射最小质量
+playerMinMassSplit = 36          ; 分裂最小质量
+playerSmoothSplit = 1            ; 平滑分裂 (0=否, 1=是)
+playerMaxCells = 16              ; 玩家最大细胞数
+playerRecombineTime = 30         ; 细胞重组时间（秒）
+playerMassDecayRate = 0.002      ; 质量衰减率
+playerMinMassDecay = 9           ; 开始衰减的最小质量
+playerMaxNickLength = 15         ; 昵称最大长度
+playerDisconnectTime = 60        ; 断线后保留时间（秒）
+
+; 团队模式设置
+teamsCollision = 1               ; 团队碰撞 (0=否, 1=是)
+
+; 锦标赛模式设置
+tourneyMaxPlayers = 12           ; 最大玩家数
+tourneyPrepTime = 10             ; 准备时间（秒）
+tourneyEndTime = 30              ; 结束时间（秒）
+tourneyTimeLimit = 20            ; 时间限制（分钟）
+tourneyAutoFill = 0              ; 自动填充 (0=否, 1=是)
+tourneyAutoFillPlayers = 1       ; 自动填充玩家数
+
+; 聊天设置
+chatMaxMessageLength = 70        ; 聊天消息最大长度
+
+; Linux DO OAuth 认证设置
+; 如果不需要认证，请将 authClientId 和 authClientSecret 留空
+authClientId =
+authClientSecret =
+; OAuth 回调地址（必须与 Linux DO 应用设置中的回调地址一致）
+authRedirectUri =
+; 代理设置，用于向外部发送请求（如不需要请留空）
+; 示例: http://127.0.0.1:10809
+authProxy = 
