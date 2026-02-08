@@ -1,6 +1,8 @@
 # Ogar3
 An open source Agar.io server implementation, based on Jaralowell's [Ogarserv](https://github.com/JaraLowell/OgarServ/releases/tag/1.5.9) & [Cigar](https://github.com/CigarProject/Cigar)
 
+将`gameserver.ini.bak`重命名为`gameserver.ini`后使用 
+
 ## Want old version?
 [Here you go!](https://github.com/Faris90/Ogar3/tree/old-ogar3)
 ## Project Status
