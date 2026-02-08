@@ -12,7 +12,7 @@
     };
 
     var touchX, touchY,
-        touchable = 'createTouch' in document,
+        touchable = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0),
         touches = [];
 
     var leftTouchID = -1,
@@ -186,22 +186,28 @@
     function onTouchStart(e) {
         for (var i = 0; i < e.changedTouches.length; i++) {
             var touch = e.changedTouches[i];
-            if ((leftTouchID < 0) && (touch.clientX < canvasWidth / 2)) {
+            var size = ~~(canvasWidth / 7);
+
+            // Check if touch is on split button (bottom-right corner)
+            if ((touch.clientX > canvasWidth - size) && (touch.clientY > canvasHeight - size)) {
+                sendMouseMove();
+                sendUint8(17); // split
+                continue;
+            }
+
+            // Check if touch is on eject button (above split button)
+            if ((touch.clientX > canvasWidth - size) && (touch.clientY > canvasHeight - 2 * size - 10) && (touch.clientY < canvasHeight - size - 10)) {
+                sendMouseMove();
+                sendUint8(21); // eject
+                continue;
+            }
+
+            // If no touch is active and not on buttons, set this as movement touch
+            if (leftTouchID < 0) {
                 leftTouchID = touch.identifier;
                 leftTouchStartPos.reset(touch.clientX, touch.clientY);
                 leftTouchPos.copyFrom(leftTouchStartPos);
                 leftVector.reset(0, 0);
-            }
-
-            var size = ~~(canvasWidth / 7);
-            if ((touch.clientX > canvasWidth - size) && (touch.clientY > canvasHeight - size)) {
-                sendMouseMove();
-                sendUint8(17); // split
-            }
-
-            if ((touch.clientX > canvasWidth - size) && (touch.clientY > canvasHeight - 2 * size - 10) && (touch.clientY < canvasHeight - size - 10)) {
-                sendMouseMove();
-                sendUint8(21); // eject
             }
         }
         touches = e.touches;
@@ -212,11 +218,9 @@
         for (var i = 0; i < e.changedTouches.length; i++) {
             var touch = e.changedTouches[i];
             if (leftTouchID == touch.identifier) {
-                leftTouchPos.reset(touch.clientX, touch.clientY);
-                leftVector.copyFrom(leftTouchPos);
-                leftVector.minusEq(leftTouchStartPos);
-                rawMouseX = leftVector.x * 3 + canvasWidth / 2;
-                rawMouseY = leftVector.y * 3 + canvasHeight / 2;
+                // Use touch position directly as target
+                rawMouseX = touch.clientX;
+                rawMouseY = touch.clientY;
                 mouseCoordinateChange();
                 sendMouseMove();
             }
@@ -955,36 +959,7 @@
     }
 
     function drawTouch(ctx) {
-        ctx.save();
-        if (touchable) {
-            for (var i = 0; i < touches.length; i++) {
-                var touch = touches[i];
-                if (touch.identifier == leftTouchID) {
-                    ctx.beginPath();
-                    ctx.strokeStyle = "#0096ff";
-                    ctx.lineWidth = 6;
-                    ctx.arc(leftTouchStartPos.x, leftTouchStartPos.y, 40, 0, Math.PI * 2, true);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.strokeStyle = "#0096ff";
-                    ctx.lineWidth = 2;
-                    ctx.arc(leftTouchStartPos.x, leftTouchStartPos.y, 60, 0, Math.PI * 2, true);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.strokeStyle = "#0096ff";
-                    ctx.arc(leftTouchPos.x, leftTouchPos.y, 40, 0, Math.PI * 2, true);
-                    ctx.stroke();
-                } else {
-                    ctx.beginPath();
-                    ctx.beginPath();
-                    ctx.strokeStyle = "#0096ff";
-                    ctx.lineWidth = "6";
-                    ctx.arc(touch.clientX, touch.clientY, 40, 0, Math.PI * 2, true);
-                    ctx.stroke();
-                }
-            }
-        }
-        ctx.restore();
+        // Touch indicators disabled
     }
 
     function drawGrid() {
@@ -1850,6 +1825,22 @@
 
         setInterval(drawChatBoard, 1E3);
         setInterval(updateKillFeed, 1E3);
+
+        // Minimap toggle functionality
+        var minimap = document.getElementById('minimap');
+        var minimapToggle = document.getElementById('minimap-toggle');
+        var minimapVisible = !touchable; // Hide on mobile by default
+
+        if (!minimapVisible) {
+            minimap.style.display = 'none';
+        }
+
+        if (minimapToggle) {
+            minimapToggle.addEventListener('click', function() {
+                minimapVisible = !minimapVisible;
+                minimap.style.display = minimapVisible ? 'block' : 'none';
+            });
+        }
     });
     wHandle.onload = gameLoop
 })(window, window.jQuery);
