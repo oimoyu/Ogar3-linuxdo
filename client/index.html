@@ -83,6 +83,13 @@
                     <br clear="both" />
                 </div>
 
+                <div class="form-group" id="auth-section" style="display:none;">
+                    <button type="button" id="linuxdo-login-btn" onclick="loginWithLinuxDO(); return false;" class="btn btn-success" style="width: 100%; margin-bottom: 10px;">
+                        <i class="glyphicon glyphicon-log-in"></i> Login with Linux DO
+                    </button>
+                    <div id="auth-status" style="text-align: center; margin-bottom: 10px; color: #5cb85c;"></div>
+                </div>
+
                 <div class="form-group">
                     <div class="mb-10">
                         <!--<a data-toggle="modal" data-target="#inPageModal" onclick="openSkinsList();" class="btn-primary btn btn-info" role="button" style="width: 100%;">Skins Gallery</a>-->
@@ -123,8 +130,8 @@
                 <center>
                     <span class="text-muted">
                         Move your mouse to control your cell<br/>
-                        Press <b>Space</b> to split<br/>
-                        Press <b>W</b> to eject some mass<br/>
+                        按 <b>空格键</b> 分裂<br/>
+                        按 <b>W</b> 发射质量<br/>
                     </span>
                 </center>
             </div>
@@ -148,12 +155,88 @@
     </div>
 
     <canvas id="canvas" width="800" height="600"></canvas>
+    <canvas id="minimap" width="200" height="200" style="position: fixed; bottom: 10px; right: 10px; border: 2px solid #fff; background: rgba(0, 0, 0, 0.3); border-radius: 5px; z-index: 100;"></canvas>
+    <div id="killFeed" style="position: fixed; right: 10px; font-family: Ubuntu, sans-serif; font-size: 14px; z-index: 100; max-width: 300px;"></div>
     <input type="text" id="chat_textbox" placeholder="Press enter to chat!" maxlength="200" />
     <div style="font-family:'Ubuntu'">&nbsp;</div>
 
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
     <script>
         window.scroll(0, window.document.body.scrollHeight);
+
+        // Auth functionality
+        let authEnabled = false;
+        let authRequired = false;
+
+        function loginWithLinuxDO() {
+            window.location.href = '/auth/login';
+        }
+
+        function checkAuthStatus() {
+            fetch('/auth/config')
+                .then(res => res.json())
+                .then(data => {
+                    authEnabled = data.enabled;
+                    if (authEnabled) {
+                        document.getElementById('auth-section').style.display = 'block';
+
+                        const token = localStorage.getItem('auth_token');
+                        const username = localStorage.getItem('username');
+
+                        if (token && username) {
+                            // Verify token
+                            fetch('/auth/verify?token=' + token)
+                                .then(res => res.json())
+                                .then(data => {
+                                    if (data.valid) {
+                                        document.getElementById('auth-status').textContent = 'Logged in as: ' + username;
+                                        document.getElementById('linuxdo-login-btn').style.display = 'none';
+                                        document.getElementById('nick').value = username;
+                                        document.getElementById('nick').readOnly = true;
+                                    } else {
+                                        localStorage.removeItem('auth_token');
+                                        localStorage.removeItem('username');
+                                    }
+                                });
+                        }
+                    }
+                })
+                .catch(err => console.error('Failed to check auth config:', err));
+        }
+
+        // Override setNick to validate auth
+        const originalSetNick = window.setNick;
+        window.setNick = function(value) {
+            if (authEnabled) {
+                const token = localStorage.getItem('auth_token');
+                if (!token) {
+                    alert('Please login with Linux DO first!');
+                    return;
+                }
+
+                // Verify token before playing
+                fetch('/auth/verify?token=' + token)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.valid) {
+                            originalSetNick(value);
+                        } else {
+                            alert('Your session has expired. Please login again.');
+                            localStorage.removeItem('auth_token');
+                            localStorage.removeItem('username');
+                            location.reload();
+                        }
+                    })
+                    .catch(err => {
+                        alert('Failed to verify authentication');
+                    });
+            } else {
+                originalSetNick(value);
+            }
+        };
+
+        // Check auth status on page load
+        checkAuthStatus();
       </script>
 </body>
 </html>

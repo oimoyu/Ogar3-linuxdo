@@ -188,7 +188,7 @@ function unsafe (val, doUnesc) {
         }
         if (esc)
             unesc += "\\";
-        return unesc;
+        return unesc.trim(); // Trim trailing spaces before semicolon
     }
     return val;
 }

@@ -11,6 +11,8 @@ function PacketHandler(gameServer, socket) {
     this.pressQ = false;
     this.pressW = false;
     this.pressSpace = false;
+    this.authToken = null;
+    this.authenticated = false;
 }
 
 module.exports = PacketHandler;
@@ -101,6 +103,43 @@ PacketHandler.prototype.handleMessage = function(message) {
                 if ( ( client.disconnect <= 0 ) && ( client.spectate == false ) ) ++player;
             }
             this.socket.sendPacket(new Packet.ServerInfo(process.uptime().toFixed(0),player,this.gameServer.config.borderRight,this.gameServer.config.foodMaxAmount,this.gameServer.config.serverGamemode));
+            break;
+        case 253:
+            // Auth Token
+            var token = "";
+            for (var i = 1; i < view.byteLength; i += 2) {
+                var charCode = view.getUint16(i, true);
+                if (charCode == 0) break;
+                token += String.fromCharCode(charCode);
+            }
+            this.authToken = token;
+            // Validate token if auth is enabled
+            if (this.gameServer.authManager && this.gameServer.authManager.isEnabled()) {
+                var userInfo = this.gameServer.authManager.validateSession(token);
+                this.authenticated = !!userInfo;
+                if (userInfo) {
+                    this.socket.playerTracker.authUsername = userInfo.username;
+
+                    // Check if this user is already connected from another socket
+                    var existingSocket = this.gameServer.authenticatedUsers.get(userInfo.username);
+                    if (existingSocket && existingSocket !== this.socket) {
+                        // Send packet 96 to notify the old client about duplicate login
+                        var buf = new Buffer.alloc(1);
+                        buf.writeUInt8(96, 0);
+                        existingSocket.sendPacket(new Packet.ServerMsg(buf));
+
+                        // Close the old connection after a brief delay
+                        setTimeout(function() {
+                            existingSocket.close(1000, 'New login from another location');
+                        }, 100);
+                    }
+
+                    // Register this socket as the active connection for this user
+                    this.gameServer.authenticatedUsers.set(userInfo.username, this.socket);
+                }
+            } else {
+                this.authenticated = true; // Auth disabled, allow all
+            }
             break;
         case 255:
             // Connection Start
@@ -211,6 +250,35 @@ PacketHandler.prototype.handleMessage = function(message) {
 PacketHandler.prototype.setNickname = function(newNick) {
     var client = this.socket.playerTracker;
     if (client.cells.length < 1) {
+        // Check max players limit (only for real players, not bots)
+        if (!this.socket.isBot) {
+            var activePlayers = 0;
+            for (var i = 0; i < this.gameServer.clients.length; i++) {
+                if (this.gameServer.clients[i].playerTracker.cells.length > 0) {
+                    activePlayers++;
+                }
+            }
+
+            if (activePlayers >= this.gameServer.config.serverMaxPlayers) {
+                this.socket.sendPacket(new Packet.ServerMsg(95)); // Server full error
+                return;
+            }
+        }
+
+        // Check authentication if enabled and not a bot
+        if (this.gameServer.authManager && this.gameServer.authManager.isEnabled() && !this.socket.isBot) {
+            if (!this.authenticated) {
+                // Reject connection if not authenticated
+                this.socket.sendPacket(new Packet.ServerMsg(94)); // Custom error code
+                this.socket.close();
+                return;
+            }
+            // Use authenticated username
+            if (this.socket.playerTracker.authUsername) {
+                newNick = this.socket.playerTracker.authUsername;
+            }
+        }
+
         // Set name first
         client.setName(newNick);
 
@@ -219,6 +287,14 @@ PacketHandler.prototype.setNickname = function(newNick) {
 
         // Turn off spectate mode
         client.spectate = false;
+
+        // Send join notification to all players
+        if (newNick && newNick.trim() !== '') {
+            var joinPacket = new Packet.KillFeed(2, newNick);
+            for (var i = 0; i < this.gameServer.clients.length; i++) {
+                this.gameServer.clients[i].sendPacket(joinPacket);
+            }
+        }
     }
 };
 

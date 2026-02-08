@@ -234,6 +234,20 @@ Mode.prototype.onCellAdd = function(cell) {
 
 Mode.prototype.onCellRemove = function(cell) {
     // Called when a player cell is removed
+
+    // Check if player was killed (no cells left)
+    if (cell.owner.cells.length === 0 && cell.killedBy && cell.killedBy.owner) {
+        var killerName = cell.killedBy.owner.name || 'An unnamed cell';
+        var killedName = cell.owner.name || 'An unnamed cell';
+        if (killerName !== killedName) {
+            var Packet = require('../packet');
+            var killPacket = new Packet.KillFeed(1, killerName, killedName);
+            var gameServer = cell.owner.gameServer;
+            for (var i = 0; i < gameServer.clients.length; i++) {
+                gameServer.clients[i].sendPacket(killPacket);
+            }
+        }
+    }
 };
 
 Mode.prototype.onCellMove = function(x1,y1,cell) {

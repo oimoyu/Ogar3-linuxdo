@@ -2,6 +2,7 @@
 
 function FakeSocket(gameServer) {
 this.server = gameServer;
+this.isBot = true;
 }
 
 module.exports = FakeSocket;

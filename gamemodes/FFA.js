@@ -98,4 +98,57 @@ FFA.prototype.updateLB = function(gameServer) {
     }
 
     this.rankOne = lb[0];
+
+    // Check win condition if enabled (only when leaderboard is full)
+    if (gameServer.config.ffaWinMultiplier > 0 && lb.length >= gameServer.config.gameLBlength) {
+        var firstPlayer = lb[0];
+        var firstScore = firstPlayer.getScore(true);
+
+        // Check if first player meets minimum score requirement
+        if (gameServer.config.ffaMinWinScore > 0 && firstScore < gameServer.config.ffaMinWinScore) {
+            return; // First player hasn't reached minimum score yet
+        }
+
+        // Calculate total score of all other players (not just leaderboard)
+        var othersTotal = 0;
+        for (var i = 0; i < gameServer.clients.length; i++) {
+            if (typeof gameServer.clients[i] == "undefined") {
+                continue;
+            }
+            var player = gameServer.clients[i].playerTracker;
+            if (player !== firstPlayer && player.cells.length > 0) {
+                othersTotal += player.getScore(true);
+            }
+        }
+
+        // Check if first player wins
+        if (othersTotal > 0 && firstScore > othersTotal * gameServer.config.ffaWinMultiplier) {
+            var winnerName = firstPlayer.getName() || "An unnamed cell";
+            var winMessage = "🏆 玩家 " + winnerName + " 获得胜利！分数：" + Math.floor(firstScore);
+
+            // Create a fake sender object for server/admin message
+            var serverSender = {
+                getName: function() { return "SERVER"; },
+                cells: [{
+                    getColor: function() { return {r: 255, g: 215, b: 0}; } // Gold color
+                }]
+            };
+
+            // Broadcast win message to all clients
+            var Packet = require('../packet');
+            var chatPacket = new Packet.Chat(serverSender, winMessage);
+            for (var i = 0; i < gameServer.clients.length; i++) {
+                if (gameServer.clients[i] && gameServer.clients[i].sendPacket) {
+                    gameServer.clients[i].sendPacket(chatPacket);
+                }
+            }
+
+            // Disconnect the winner after a brief delay
+            setTimeout(function() {
+                if (firstPlayer.socket && firstPlayer.socket.close) {
+                    firstPlayer.socket.close(1000, 'Victory!');
+                }
+            }, 2000);
+        }
+    }
 };

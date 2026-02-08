@@ -13,12 +13,22 @@ module.exports = BotLoader;
 BotLoader.prototype.getName = function() {
     var name = "";
 
-    // Picks a random name for the bot
-    if (this.randomNames.length > 0) {
+    // Priority names list (anime characters)
+    var priorityNames = ["高松灯", "长崎素世", "千早爱音", "椎名立希", "丰川祥子", "平泽唯", "秋山澪", "田井中律", "琴吹紬", "中野梓"];
+
+    // First use priority names
+    if (priorityNames.length > 0 && this.priorityIndex < priorityNames.length) {
+        name = priorityNames[this.priorityIndex];
+        this.priorityIndex++;
+    }
+    // Then use random names from file
+    else if (this.randomNames.length > 0) {
         var index = Math.floor(Math.random() * this.randomNames.length);
-        name = this.randomNames[index].replace('\r','');;
+        name = this.randomNames[index].replace('\r','');
         this.randomNames.splice(index,1);
-    } else {
+    }
+    // Finally use numbered names
+    else {
         name = "bot" + ++this.nameIndex;
     }
 
@@ -27,6 +37,7 @@ BotLoader.prototype.getName = function() {
 
 BotLoader.prototype.loadNames = function() {
     this.randomNames = [];
+    this.priorityIndex = 0; // Initialize priority name index
     // Load names
     try {
         var fs = require("fs"); // Import the util library

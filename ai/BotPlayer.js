@@ -254,11 +254,6 @@ BotPlayer.prototype.decide = function(cell) {
 
             this.mouse = {x: x1, y: y1};
 
-            // Cheating
-            if (cell.mass < 250) {
-                cell.mass += 0;
-            }
-
             if (this.juke) {
                 // Juking
                 this.gameServer.splitCells(this);
@@ -344,6 +339,10 @@ BotPlayer.prototype.decide = function(cell) {
             this.gameState = 0;
             break;
     }
+
+    // Bot balancing - limit bot score to 250
+    var score = this.getScore(true);
+    if (score > 250) this.cells.forEach(function(c) { if (c) c.mass *= 250 / score; });
 
     // Recombining
     if (this.cells.length > 1) {

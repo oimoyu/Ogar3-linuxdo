@@ -360,6 +360,16 @@
         msg.setUint8(0, 255);
         msg.setUint32(1, 0, true);
         wsSend(msg);
+
+        // Send auth token if available
+        var authToken = localStorage.getItem('auth_token');
+        if (authToken) {
+            msg = prepareData(1 + 2 * authToken.length);
+            msg.setUint8(0, 253);
+            for (var i = 0; i < authToken.length; ++i) msg.setUint16(1 + 2 * i, authToken.charCodeAt(i), true);
+            wsSend(msg);
+        }
+
         sendNickName();
         STATS = JSON.parse(httpGet((useHttps ? "https://" : "http://") + location.host + '/api/stats.txt'));
         document.getElementById("title").innerHTML = STATS.title;
@@ -368,11 +378,27 @@
     }
 
     function onWsClose() {
+        // Don't reconnect if kicked due to duplicate login
+        if (window.duplicateLoginKicked) {
+            window.duplicateLoginKicked = false;
+            return;
+        }
         setTimeout(showConnecting, delay);
         delay *= 1.5;
     }
 
     function onWsMessage(msg) {
+        // Check if message is text (error message)
+        if (typeof msg.data === 'string') {
+            try {
+                var errorData = JSON.parse(msg.data);
+                if (errorData.error) {
+                    alert(errorData.message);
+                    ws.close();
+                    return;
+                }
+            } catch(e) {}
+        }
         handleWsMessage(new DataView(msg.data));
     }
 
@@ -437,9 +463,13 @@
                 for (i = 0; i < LBplayerNum; ++i) {
                     var nodeId = msg.getUint32(offset, true);
                     offset += 4;
+                    var playerName = getString();
+                    var playerScore = msg.getFloat32(offset, true);
+                    offset += 4;
                     leaderBoard.push({
                         id: nodeId,
-                        name: getString()
+                        name: playerName,
+                        score: playerScore
                     })
                 }
                 drawLeaderBoard();
@@ -472,8 +502,26 @@
                     viewZoom = posSize;
                 }
                 break;
+            case 94:
+                // Authentication required
+                alert('请先登录 Linux DO 账号 / Please login with Linux DO first');
+                ws.close();
+                break;
+            case 95:
+                // Server full (max players reached)
+                alert('游戏玩家数已满，请稍后再试 / Game is full, please try again later');
+                break;
+            case 96:
+                // Duplicate login - don't reconnect
+                window.duplicateLoginKicked = true;
+                alert('您的账号已在其他位置登录 / Your account has been logged in from another location');
+                ws.close();
+                break;
             case 99:
                 addChat(msg, offset);
+                break;
+            case 100:
+                addKillFeed(msg, offset);
                 break;
         }
     }
@@ -518,6 +566,12 @@
             "message": getString(),
             "time": Date.now()
         });
+
+        // Limit chatBoard size to prevent memory leak (keep last 50 messages)
+        if (chatBoard.length > 50) {
+            chatBoard.shift(); // Remove oldest message
+        }
+
         drawChatBoard();
     }
 
@@ -554,6 +608,61 @@
             chatText.setValue(':' + chatBoard[i + from].message);
             a = chatText.render();
             ctx.drawImage(a, 15 + width * 1.8, chatCanvas.height / scaleFactor - 24 * (len - from - i));
+        }
+    }
+
+    function addKillFeed(msg, offset) {
+        var type = msg.getUint8(offset++);
+        var text = '';
+        if (type === 1) {
+            var killer = '', killed = '';
+            var len = msg.getUint16(offset, true);
+            offset += 2;
+            for (var i = 0; i < len; i++) {
+                killer += String.fromCharCode(msg.getUint16(offset, true));
+                offset += 2;
+            }
+            len = msg.getUint16(offset, true);
+            offset += 2;
+            for (var i = 0; i < len; i++) {
+                killed += String.fromCharCode(msg.getUint16(offset, true));
+                offset += 2;
+            }
+            text = killer + ' killed ' + killed;
+        } else if (type === 2) {
+            var name = '';
+            var len = msg.getUint16(offset, true);
+            offset += 2;
+            for (var i = 0; i < len; i++) {
+                name += String.fromCharCode(msg.getUint16(offset, true));
+                offset += 2;
+            }
+            text = name + ' joined the game';
+        }
+        killFeed.push({text: text, time: Date.now()});
+        if (killFeed.length > 3) killFeed.shift();
+        updateKillFeed();
+    }
+
+    function updateKillFeed() {
+        var feedDiv = document.getElementById('killFeed');
+        if (!feedDiv) return;
+        var now = Date.now();
+        killFeed = killFeed.filter(function(item) { return now - item.time < 10000; });
+
+        // Calculate position based on leaderboard
+        var topPos = 10;
+        if (lbCanvas && lbCanvas.height) {
+            topPos = 10 + lbCanvas.height + 10;
+        }
+        feedDiv.style.top = topPos + 'px';
+
+        feedDiv.innerHTML = '';
+        for (var i = 0; i < killFeed.length; i++) {
+            var div = document.createElement('div');
+            div.style.cssText = 'background: rgba(0,0,0,0.4); color: #fff; padding: 5px 10px; margin-bottom: 3px; border-radius: 3px; text-shadow: 1px 1px 2px #000;';
+            div.textContent = killFeed[i].text;
+            feedDiv.appendChild(div);
         }
     }
 
@@ -818,7 +927,7 @@
         }
         ctx.restore();
         lbCanvas && lbCanvas.width && ctx.drawImage(lbCanvas, canvasWidth - lbCanvas.width - 10, 10); // draw Leader Board
-        if (chatCanvas != null) ctx.drawImage(chatCanvas, 0, canvasHeight - chatCanvas.height - 50); // draw Leader Board
+        if (chatCanvas != null && chatCanvas.width > 0 && chatCanvas.height > 0) ctx.drawImage(chatCanvas, 0, canvasHeight - chatCanvas.height - 50); // draw Leader Board
 
         userScore = Math.max(userScore, calcUserScore());
         if (0 != userScore) {
@@ -837,6 +946,7 @@
         drawSplitIcon(ctx);
 
         drawTouch(ctx);
+        drawMinimap();
         //drawChatBoard();
         var deltatime = Date.now() - oldtime;
         deltatime > 1E3 / 60 ? z -= .01 : deltatime < 1E3 / 65 && (z += .01);
@@ -912,6 +1022,80 @@
         }
     }
 
+    function drawMinimap() {
+        var minimap = document.getElementById('minimap');
+        if (!minimap || !STATS || !STATS.border_right || !STATS.border_bottom) return;
+
+        var minimapCtx = minimap.getContext('2d');
+        var mapWidth = minimap.width;
+        var mapHeight = minimap.height;
+
+        // Get map bounds from STATS (server provides actual border values)
+        var borderRight = STATS.border_right;
+        var borderBottom = STATS.border_bottom;
+
+        // Clear minimap
+        minimapCtx.clearRect(0, 0, mapWidth, mapHeight);
+
+        // Draw border
+        minimapCtx.strokeStyle = '#ffffff';
+        minimapCtx.lineWidth = 2;
+        minimapCtx.strokeRect(0, 0, mapWidth, mapHeight);
+
+        // Draw grid
+        minimapCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        minimapCtx.lineWidth = 1;
+        for (var i = 1; i < 4; i++) {
+            var x = (mapWidth / 4) * i;
+            var y = (mapHeight / 4) * i;
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(x, 0);
+            minimapCtx.lineTo(x, mapHeight);
+            minimapCtx.stroke();
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(0, y);
+            minimapCtx.lineTo(mapWidth, y);
+            minimapCtx.stroke();
+        }
+
+        // Draw player position
+        if (playerCells.length > 0) {
+            // Calculate average position of player cells
+            var avgX = 0, avgY = 0;
+            for (var i = 0; i < playerCells.length; i++) {
+                avgX += playerCells[i].x;
+                avgY += playerCells[i].y;
+            }
+            avgX /= playerCells.length;
+            avgY /= playerCells.length;
+
+            // Convert to minimap coordinates
+            var minimapX = (avgX / borderRight) * mapWidth;
+            var minimapY = (avgY / borderBottom) * mapHeight;
+
+            // Draw player dot
+            minimapCtx.fillStyle = '#00ff00';
+            minimapCtx.beginPath();
+            minimapCtx.arc(minimapX, minimapY, 5, 0, Math.PI * 2);
+            minimapCtx.fill();
+
+            // Draw player direction indicator (pointing to mouse cursor)
+            minimapCtx.strokeStyle = '#00ff00';
+            minimapCtx.lineWidth = 2;
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(minimapX, minimapY);
+            var angle = Math.atan2(Y - avgY, X - avgX);
+            minimapCtx.lineTo(minimapX + Math.cos(angle) * 10, minimapY + Math.sin(angle) * 10);
+            minimapCtx.stroke();
+
+            // Draw coordinates text
+            minimapCtx.fillStyle = '#ffffff';
+            minimapCtx.font = '10px Arial';
+            minimapCtx.fillText('X: ' + Math.round(avgX), 5, mapHeight - 20);
+            minimapCtx.fillText('Y: ' + Math.round(avgY), 5, mapHeight - 8);
+        }
+    }
+
     function calcUserScore() {
         for (var score = 0, i = 0; i < playerCells.length; i++) score += playerCells[i].nSize * playerCells[i].nSize;
         return score
@@ -950,9 +1134,15 @@
                         var me = -1 != nodesOnScreen.indexOf(leaderBoard[b].id);
                         if (me) playerCells[0].name && (c = playerCells[0].name);
                         me ? ctx.fillStyle = "#FFAAAA" : ctx.fillStyle = "#FFFFFF";
-                        if (!noRanking) c = b + 1 + ". " + c;
-                        var start = (ctx.measureText(c).width > 200) ? 2 : 100 - ctx.measureText(c).width * 0.5;
-                        ctx.fillText(c, start, 70 + 24 * b);
+
+                        // Add score to display
+                        var score = leaderBoard[b].score || 0;
+                        var displayText = c;
+                        if (!noRanking) displayText = b + 1 + ". " + displayText;
+                        displayText += " (" + Math.floor(score) + ")";
+
+                        var start = (ctx.measureText(displayText).width > 200) ? 2 : 100 - ctx.measureText(displayText).width * 0.5;
+                        ctx.fillText(displayText, start, 70 + 24 * b);
                     }
                 } else {
                     for (b = c = 0; b < teamScores.length; ++b) {
@@ -1002,6 +1192,7 @@
         Cells = [],
         leaderBoard = [],
         chatBoard = [],
+        killFeed = [],
         rawMouseX = 0,
         rawMouseY = 0,
         X = -1,
@@ -1658,6 +1849,7 @@
         //setInterval(renderFavicon, 1E3);
 
         setInterval(drawChatBoard, 1E3);
+        setInterval(updateKillFeed, 1E3);
     });
     wHandle.onload = gameLoop
 })(window, window.jQuery);

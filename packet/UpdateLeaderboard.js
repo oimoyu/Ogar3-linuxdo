@@ -67,6 +67,7 @@ UpdateLeaderboard.prototype.build = function() {
                 bufferSize += 4; // Element ID
                 bufferSize += item.getName() ? item.getName().length * 2 : 0; // Name
                 bufferSize += 2; // Name terminator
+                bufferSize += 4; // Score (float32)
 
                 validElements++;
             }
@@ -105,6 +106,11 @@ UpdateLeaderboard.prototype.build = function() {
 
                 view.setUint16(offset, 0, true);
                 offset += 2;
+
+                // Add score
+                var score = item.getScore(true) || 0;
+                view.setFloat32(offset, score, true);
+                offset += 4;
             }
             return buf;
         case 50: // Teams-type Packet (Pie Chart)

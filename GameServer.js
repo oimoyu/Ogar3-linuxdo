@@ -19,6 +19,7 @@ var BotLoader = require('./ai/BotLoader');
 var Logger = require('./modules/log');
 var serveStatic = require('serve-static');
 var serve = serveStatic('./client/');
+var AuthManager = require('./modules/auth');
 // GameServer implementation
 function GameServer() {
     // Startup 
@@ -40,6 +41,10 @@ function GameServer() {
     this.log = new Logger();
     this.commands;    // Command handler
     this.banned = []; // List of banned IPs
+    this.authManager = null; // Auth manager (initialized after config load)
+    this.authenticatedUsers = new Map(); // Track authenticated users (username -> socket)
+    this.authCleanupTick = 0; // Counter for periodic cleanup of orphaned sockets
+    this.stats = '{}'; // Initialize stats with empty JSON
 
     // Main loop tick
     this.time = new Date();
@@ -58,7 +63,8 @@ function GameServer() {
         table: ''
     };
     this.config = {                   // Border - Right: X increases, Down: Y increases (as of 2015-05-20)
-        serverMaxConnections: 64,     // Maximum amount of connections to the server.
+        serverMaxConnections: 1000,   // Maximum amount of WebSocket connections to the server.
+        serverMaxPlayers: 64,         // Maximum amount of players that can spawn (click Play)
 	    serverMaxConnPerIp: 9, 
         serverPort: 8080,            // Server port
         serverGamemode: 0,            // Gamemode, 0 = FFA, 1 = Teams
@@ -127,6 +133,28 @@ function GameServer() {
 
 module.exports = GameServer;
 
+// Cleanup orphaned authenticated user sockets
+GameServer.prototype.cleanupAuthenticatedUsers = function() {
+    var orphanedUsers = [];
+
+    // Check each authenticated user's socket
+    this.authenticatedUsers.forEach(function(socket, username) {
+        // Check if socket is closed or in closing state
+        if (!socket || socket.readyState === 2 || socket.readyState === 3) {
+            orphanedUsers.push(username);
+        }
+    });
+
+    // Remove orphaned entries
+    for (var i = 0; i < orphanedUsers.length; i++) {
+        this.authenticatedUsers.delete(orphanedUsers[i]);
+    }
+
+    if (orphanedUsers.length > 0) {
+        console.log("[Auth] Cleaned up " + orphanedUsers.length + " orphaned socket(s)");
+    }
+};
+
 GameServer.prototype.start = function() {
     // Logging
     this.log.setup(this);
@@ -152,10 +180,33 @@ GameServer.prototype.start = function() {
     // Gamemode configurations
     this.gameMode.onServerInit(this);
 this.config.serverPort = process.env.PORT || this.config.serverPort;
+
+    // Initialize auth manager
+    this.authManager = new AuthManager(this.config);
+    if (this.authManager.isEnabled()) {
+        console.log("* \u001B[33mLinux DO authentication enabled\u001B[0m");
+    }
+
 // here
     // Start the server
+    var self = this;
     var hserver = http.createServer( function(req, res){
     res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // Handle auth routes
+    if (req.url.startsWith('/auth/')) {
+        self.handleAuthRoute(req, res);
+        return;
+    }
+
+    // Handle stats API
+    if (req.url === '/api/stats.txt') {
+        res.setHeader('Content-Type', 'application/json');
+        res.writeHead(200);
+        res.end(self.stats || '{}');
+        return;
+    }
+
       var done = finalhandler(req, res)
 	 // res.end({title:12})
       serve(req, res, done)
@@ -182,12 +233,19 @@ this.socketServer = new WebSocket.Server({server: hserver, perMessageDeflate: fa
 
     function connectionEstablished(ws) {
         if (this.clients.length >= this.config.serverMaxConnections) { // Server full
-            console.log("\u001B[33mClient tried to connect, but server player limit has been reached!\u001B[0m");
-            ws.close();
+            console.log("\u001B[33mClient tried to connect, but server connection limit has been reached!\u001B[0m");
+            // Send error message before closing
+            try {
+                ws.send(JSON.stringify({ error: 'SERVER_FULL', message: '服务器连接数已满，请稍后再试 / Server is full, please try again later' }));
+            } catch(e) {}
+            setTimeout(() => ws.close(), 100);
             return;
         } else if (this.banned.indexOf(ws._socket.remoteAddress) != -1) { // Banned
             console.log("\u001B[33mClient " + ws._socket.remoteAddress + ", tried to connect but is banned!\u001B[0m");
-            ws.close();
+            try {
+                ws.send(JSON.stringify({ error: 'BANNED', message: '您已被封禁 / You are banned' }));
+            } catch(e) {}
+            setTimeout(() => ws.close(), 100);
             return;
         }
 
@@ -208,6 +266,17 @@ this.socketServer = new WebSocket.Server({server: hserver, perMessageDeflate: fa
             this.server.log.onDisconnect(this.socket.remoteAddress);
             var client = this.socket.playerTracker;
             console.log( "\u001B[31mClient Disconnect: " + this.socket.remoteAddress + ":" + this.socket.remotePort +" Error " + error + "\u001B[0m");
+
+            // Clean up authenticated user tracking
+            var authUsername = client && client.authUsername;
+            if (authUsername) {
+                var currentSocket = this.server.authenticatedUsers.get(authUsername);
+                // Only delete if this socket is still the registered one
+                if (currentSocket === this.socket) {
+                    this.server.authenticatedUsers.delete(authUsername);
+                }
+            }
+
             var len = this.socket.playerTracker.cells.length;
             for (var i = 0; i < len; i++) {
                 var cell = this.socket.playerTracker.cells[i];
@@ -460,6 +529,13 @@ GameServer.prototype.mainLoop = function() {
             this.lb_packet = new Packet.UpdateLeaderboard(this.leaderboard,this.gameMode.packetLB);
 
             this.tickMain = 0; // Reset
+
+            // Cleanup orphaned authenticated sockets every 60 seconds
+            this.authCleanupTick++;
+            if (this.authCleanupTick >= 60) {
+                this.cleanupAuthenticatedUsers();
+                this.authCleanupTick = 0;
+            }
         }
 
         // Check Bot Min Players
@@ -1024,12 +1100,8 @@ GameServer.prototype.switchSpectator = function(player) {
 };
 
 GameServer.prototype.MasterPing = function() {
-    try {
-    fs.renameSync('./client/api/stats.txt', './client/api/stats.txt.bak');
-    fs.appendFileSync('./client/api/stats.txt',String(this.stats));
-    } catch(error) {
-        fs.appendFileSync('./client/api/stats.txt',String(this.stats));
-    }
+    // Stats are now served from memory, no file writing needed
+    this.getStats();
 }
 
 // Stats server
@@ -1068,9 +1140,67 @@ GameServer.prototype.getStats = function() {
         'max_players': this.config.serverMaxConnections,
         'gamemode': this.gameMode.name,
         'start_time': this.startTime,
-        'title': this.config.serverName
+        'title': this.config.serverName,
+        'border_right': this.config.borderRight,
+        'border_bottom': this.config.borderBottom
     };
     this.stats = JSON.stringify(s);
+};
+
+GameServer.prototype.handleAuthRoute = function(req, res) {
+    const url = require('url');
+    const parsedUrl = url.parse(req.url, true);
+
+    if (parsedUrl.pathname === '/auth/login') {
+        // Redirect to Linux DO OAuth
+        const authUrl = this.authManager.getAuthUrl('');
+        res.writeHead(302, { 'Location': authUrl });
+        res.end();
+    } else if (parsedUrl.pathname === '/auth/callback') {
+        // Handle OAuth callback
+        const code = parsedUrl.query.code;
+        if (!code) {
+            res.writeHead(400);
+            res.end('Missing authorization code');
+            return;
+        }
+
+        this.authManager.getAccessToken(code)
+            .then(tokenData => this.authManager.getUserInfo(tokenData.access_token))
+            .then(userInfo => {
+                const token = require('crypto').randomBytes(32).toString('hex');
+                this.authManager.createSession(token, userInfo);
+
+                // Redirect back to game with token
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                res.end(`
+                    <script>
+                        localStorage.setItem('auth_token', '${token}');
+                        localStorage.setItem('username', '${userInfo.username}');
+                        window.location.href = '/';
+                    </script>
+                `);
+            })
+            .catch(err => {
+                console.error('Auth error:', err);
+                res.writeHead(500);
+                res.end('Authentication failed');
+            });
+    } else if (parsedUrl.pathname === '/auth/verify') {
+        // Verify token
+        const token = parsedUrl.query.token;
+        const userInfo = this.authManager.validateSession(token);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ valid: !!userInfo, userInfo }));
+    } else if (parsedUrl.pathname === '/auth/config') {
+        // Return auth config
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ enabled: this.authManager.isEnabled() }));
+    } else {
+        res.writeHead(404);
+        res.end('Not found');
+    }
 };
 
 WebSocket.prototype.sendPacket = function(packet) {

@@ -4,8 +4,10 @@
   "description": "Open source Agar.io server",
   "main": "index.js",
   "dependencies": {
+    "axios": "^1.13.4",
     "burrow": "0.0.0",
     "finalhandler": "^0.3.6",
+    "https-proxy-agent": "^7.0.6",
     "serve-static": "^1.9.3",
     "ws": "^0.7.2"
   },
