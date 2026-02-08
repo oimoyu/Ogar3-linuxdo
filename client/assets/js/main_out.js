@@ -218,9 +218,11 @@
         for (var i = 0; i < e.changedTouches.length; i++) {
             var touch = e.changedTouches[i];
             if (leftTouchID == touch.identifier) {
-                // Use touch position directly as target
-                rawMouseX = touch.clientX;
-                rawMouseY = touch.clientY;
+                leftTouchPos.reset(touch.clientX, touch.clientY);
+                leftVector.copyFrom(leftTouchPos);
+                leftVector.minusEq(leftTouchStartPos);
+                rawMouseX = leftVector.x * 3 + canvasWidth / 2;
+                rawMouseY = leftVector.y * 3 + canvasHeight / 2;
                 mouseCoordinateChange();
                 sendMouseMove();
             }
@@ -959,7 +961,36 @@
     }
 
     function drawTouch(ctx) {
-        // Touch indicators disabled
+        ctx.save();
+        if (touchable) {
+            for (var i = 0; i < touches.length; i++) {
+                var touch = touches[i];
+                if (touch.identifier == leftTouchID) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = "#0096ff";
+                    ctx.lineWidth = 6;
+                    ctx.arc(leftTouchStartPos.x, leftTouchStartPos.y, 40, 0, Math.PI * 2, true);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.strokeStyle = "#0096ff";
+                    ctx.lineWidth = 2;
+                    ctx.arc(leftTouchStartPos.x, leftTouchStartPos.y, 60, 0, Math.PI * 2, true);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.strokeStyle = "#0096ff";
+                    ctx.arc(leftTouchPos.x, leftTouchPos.y, 40, 0, Math.PI * 2, true);
+                    ctx.stroke();
+                } else {
+                    ctx.beginPath();
+                    ctx.beginPath();
+                    ctx.strokeStyle = "#0096ff";
+                    ctx.lineWidth = "6";
+                    ctx.arc(touch.clientX, touch.clientY, 40, 0, Math.PI * 2, true);
+                    ctx.stroke();
+                }
+            }
+        }
+        ctx.restore();
     }
 
     function drawGrid() {
